@@ -5,18 +5,13 @@
     "description": "OS: Environment Variable (Write)",
     "applies_to": [
     ],
-    "tags": [
-      "OS.Environment.Write"
-    ],
+    "tags":[ "OS.Environment.Write" ],
     "severity": "moderate",
-    "_comment": "",
     "patterns": [
       {
         "pattern": "setenv|putenv",
-        "type": "regex-word",
-        "scopes": [
-          "code"
-        ],
+        "type": "regexword",
+        "scopes": [ "code" ],
         "confidence": "high",
         "_comment": "linux cmd from lang x"
       }
@@ -26,22 +21,15 @@
     "name": "OS: Environment Variable (Write)",
     "id": "AI037600",
     "description": "OS: Environment Variable (Write)",
-    "applies_to": [
-      "python"
-    ],
-    "tags": [
-      "OS.Environment.Write"
-    ],
+    "applies_to":[ "python" ],
+    "tags":[ "OS.Environment.Write" ],
     "severity": "moderate",
     "patterns": [
       {
         "pattern": "\\bos\\.environ.+=",
         "type": "regex",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "medium",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "medium"
       }
     ]
   },
@@ -49,22 +37,15 @@
     "name": "OS: Environment Variable (Write)",
     "id": "AI037700",
     "description": "OS: Environment Variable (Write)",
-    "applies_to": [
-      "rust"
-    ],
-    "tags": [
-      "OS.Environment.Write"
-    ],
+    "applies_to":[ "rust" ],
+    "tags":[ "OS.Environment.Write" ],
     "severity": "moderate",
     "patterns": [
       {
         "pattern": "env::set_var",
-        "type": "regex",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "high",
-        "_comment": ""
+        "type": "string",
+        "scopes": [ "code" ],
+        "confidence": "high"
       }
     ]
   },
@@ -72,23 +53,15 @@
     "name": "OS: Environment Variable (Write)",
     "id": "AI037800",
     "description": "OS: Environment Variable (Write)",
-    "applies_to": [
-      "csharp"
-    ],
-    "tags": [
-      "OS.Environment.Write"
-    ],
+    "applies_to":[ "csharp" ],
+    "tags":[ "OS.Environment.Write" ],
     "severity": "moderate",
-    "_comment": "",
     "patterns": [
       {
         "pattern": "SetEnvironmentVariable",
         "type": "string",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "high",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "high"
       }
     ]
   },
@@ -96,23 +69,15 @@
     "name": "OS: Environment Variable (Write)",
     "id": "AI037900",
     "description": "OS: Environment Variable (Write)",
-    "applies_to": [
-      "powershell"
-    ],
-    "tags": [
-      "OS.Environment.Write"
-    ],
+    "applies_to":[ "powershell" ],
+    "tags":[ "OS.Environment.Write" ],
     "severity": "moderate",
-    "_comment": "",
     "patterns": [
       {
         "pattern": "SetEnvironmentVariable|\\$env:.+=",
         "type": "regex",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "high",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "high"
       }
     ]
   },
@@ -120,32 +85,21 @@
     "name": "OS: Environment Variable (Write)",
     "id": "AI037910",
     "description": "OS: Environment Variable (Write)",
-    "applies_to": [
-      "javascript"
-    ],
-    "tags": [
-      "OS.Environment.Write"
-    ],
+    "applies_to":[ "javascript" ],
+    "tags":[ "OS.Environment.Write" ],
     "severity": "moderate",
-    "_comment": "",
     "patterns": [
       {
         "pattern": "process\\.env\\[\\\".*\\\"\\] *= *",
         "type": "regex",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "high",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "high"
       },
       {
         "pattern": "app\\.set\\('environment'",
         "type": "regex",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "high",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "high"
       }
     ]
   },
@@ -155,20 +109,15 @@
     "description": "OS: Environment Variable (Write)",
     "applies_to": [
     ],
-    "tags": [
-      "OS.Environment.Write"
-    ],
+    "tags":[ "OS.Environment.Write" ],
     "severity": "moderate",
     "_comment": "Windows Registry location for environment variables",
     "patterns": [
       {
         "pattern": "System\\CurrentControlSet\\Control\\Session Manager\\Environment",
-        "type": "substring",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "medium",
-        "_comment": ""
+        "type": "string",
+        "scopes": [ "code" ],
+        "confidence": "medium"
       }
     ],
     "conditions": [
@@ -176,15 +125,11 @@
         "pattern": {
           "pattern": "SetValue",
           "type": "regex",
-          "scopes": [
-            "code"
-          ],
-          "modifiers": [ "i" ],
-          "_comment": ""
+          "scopes": [ "code" ],
+          "modifiers": [ "i" ]
         },
         "search_in": "finding-region(-10,10)",
-        "negate_finding": false,
-        "_comment": ""
+        "negate_finding": false
       }
     ]
   },
@@ -192,22 +137,15 @@
     "name": "OS: Environment Variable (Read)",
     "id": "AI037930",
     "description": "OS: Environment Variable (Read)",
-    "applies_to": [
-      "python"
-    ],
-    "tags": [
-      "OS.Environment.Read"
-    ],
+    "applies_to":[ "python" ],
+    "tags":[ "OS.Environment.Read" ],
     "severity": "moderate",
     "patterns": [
       {
         "pattern": "os\\.environ\\.items|os\\.environ\\[\\\".*\\\"\\]|os\\.environ\\.get",
         "type": "regex",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "medium",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "medium"
       }
     ]
   },
@@ -215,22 +153,15 @@
     "name": "OS: Environment Variable (Read)",
     "id": "AI037940",
     "description": "OS: Environment Variable (Read)",
-    "applies_to": [
-      "rust"
-    ],
-    "tags": [
-      "OS.Environment.Read"
-    ],
+    "applies_to":[ "rust" ],
+    "tags":[ "OS.Environment.Read" ],
     "severity": "moderate",
     "patterns": [
       {
         "pattern": "env::get_var",
         "type": "regex",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "high",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "high"
       }
     ]
   },
@@ -238,23 +169,15 @@
     "name": "OS: Environment Variable (Read)",
     "id": "AI037950",
     "description": "OS: Environment Variable (Read)",
-    "applies_to": [
-      "csharp"
-    ],
-    "tags": [
-      "OS.Environment.Read"
-    ],
+    "applies_to":[ "csharp" ],
+    "tags":[ "OS.Environment.Read" ],
     "severity": "moderate",
-    "_comment": "",
     "patterns": [
       {
         "pattern": "GetEnvironmentVariable",
         "type": "string",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "high",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "high"
       }
     ]
   },
@@ -262,23 +185,15 @@
     "name": "OS: Environment Variable (Read)",
     "id": "AI037960",
     "description": "OS: Environment Variable (Read)",
-    "applies_to": [
-      "powershell"
-    ],
-    "tags": [
-      "OS.Environment.Read"
-    ],
+    "applies_to":[ "powershell" ],
+    "tags":[ "OS.Environment.Read" ],
     "severity": "moderate",
-    "_comment": "",
     "patterns": [
       {
         "pattern": "GetEnvironmentVariable|\\$env:|Env:\\\\",
-        "type": "regex",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "high",
-        "_comment": ""
+        "type": "regexword",
+        "scopes": [ "code" ],
+        "confidence": "high"
       }
     ]
   },
@@ -286,32 +201,21 @@
     "name": "OS: Environment Variable (Read)",
     "id": "AI037970",
     "description": "OS: Environment Variable (Read)",
-    "applies_to": [
-      "javascript"
-    ],
-    "tags": [
-      "OS.Environment.Read"
-    ],
+    "applies_to":[ "javascript" ],
+    "tags":[ "OS.Environment.Read" ],
     "severity": "moderate",
-    "_comment": "",
     "patterns": [
       {
         "pattern": "= *process\\.env\\[\\\".*\\\"\\]",
         "type": "regex",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "high",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "high"
       },
       {
         "pattern": "app\\.get\\('environment'",
         "type": "regex",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "high",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "high"
       }
     ]
   },
@@ -321,36 +225,27 @@
     "description": "OS: Environment Variable (Read)",
     "applies_to": [
     ],
-    "tags": [
-      "OS.Environment.Read"
-    ],
+    "tags":[ "OS.Environment.Read" ],
     "severity": "moderate",
     "_comment": "Windows Registry location for environment variables",
     "patterns": [
       {
         "pattern": "System\\CurrentControlSet\\Control\\Session Manager\\Environment",
         "type": "substring",
-        "scopes": [
-          "code"
-        ],
-        "confidence": "medium",
-        "_comment": ""
+        "scopes": [ "code" ],
+        "confidence": "medium"
       }
     ],
     "conditions": [
       {
         "pattern": {
           "pattern": "GetValue",
-          "type": "regex",
-          "scopes": [
-            "code"
-          ],
-          "modifiers": [ "i" ],
-          "_comment": ""
+          "type": "substring",
+          "scopes": [ "code" ],
+          "modifiers": [ "i" ]
         },
         "search_in": "finding-region(-10,10)",
-        "negate_finding": false,
-        "_comment": ""
+        "negate_finding": false
       }
     ]
   },
@@ -360,18 +255,13 @@
     "description": "OS: Environment Variable (Read)",
     "applies_to": [
     ],
-    "tags": [
-      "OS.Environment.Read"
-    ],
+    "tags":[ "OS.Environment.Read" ],
     "severity": "moderate",
-    "_comment": "",
     "patterns": [
       {
         "pattern": "getenv",
-        "type": "regex-word",
-        "scopes": [
-          "code"
-        ],
+        "type": "regexword",
+        "scopes": [ "code" ],
         "confidence": "high",
         "_comment": "linux for lang x"
       }

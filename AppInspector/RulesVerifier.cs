@@ -6,11 +6,10 @@ using NLog;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using Microsoft.ApplicationInspector.Common;
 
 namespace Microsoft.ApplicationInspector.Commands
 {
@@ -73,7 +72,7 @@ namespace Microsoft.ApplicationInspector.Commands
         {
             _verified = true;
 
-            foreach (Rule rule in _rules.AsEnumerable())
+            foreach (Rule rule in _rules?.AsEnumerable() ?? Array.Empty<Rule>())
             {
                 bool ruleVerified = CheckIntegrity(rule);
                 _ruleStatuses?.Add(new RuleStatus()
@@ -104,8 +103,7 @@ namespace Microsoft.ApplicationInspector.Commands
             else
             {
                 // Check for same ID
-                Rule sameRule = _rules.FirstOrDefault(x => x.Id == rule.Id);
-                if (_rules.Count(x => x.Id == rule.Id) > 1)
+                if (_rules?.Count(x => x.Id == rule.Id) > 1)
                 {
                     _logger?.Error(MsgHelp.FormatString(MsgHelp.ID.VERIFY_RULES_DUPLICATEID_FAIL, rule.Id));
                     isValid = false;
@@ -124,24 +122,82 @@ namespace Microsoft.ApplicationInspector.Commands
                         if (!languages.Any(x => x.Equals(lang, StringComparison.CurrentCultureIgnoreCase)))
                         {
                             _logger?.Error(MsgHelp.FormatString(MsgHelp.ID.VERIFY_RULES_LANGUAGE_FAIL, rule.Id ?? ""));
-                            isValid = false;
+                            return false;
                         }
                     }
+                }
+            }
+
+            foreach (var pattern in rule.FileRegexes ?? Array.Empty<string>())
+            {
+                try
+                {
+                    _ = new Regex(pattern, RegexOptions.Compiled);
+                }
+                catch (Exception e)
+                {
+                    _logger?.Error(MsgHelp.FormatString(MsgHelp.ID.VERIFY_RULES_REGEX_FAIL, rule.Id ?? "", pattern ?? "", e.Message));
+
+                    return false;
                 }
             }
 
             //valid search pattern
             foreach (SearchPattern searchPattern in rule.Patterns ?? new SearchPattern[] { })
             {
-                try
+                if (searchPattern.PatternType == PatternType.RegexWord || searchPattern.PatternType == PatternType.Regex)
                 {
-                    Regex regex = new Regex(searchPattern.Pattern);
+                    try
+                    {
+                        if (string.IsNullOrEmpty(searchPattern.Pattern))
+                        {
+                            throw new ArgumentException();
+                        }
+                        _ = new Regex(searchPattern.Pattern);
+                    }
+                    catch (Exception e)
+                    {
+                        _logger?.Error(MsgHelp.FormatString(MsgHelp.ID.VERIFY_RULES_REGEX_FAIL, rule.Id ?? "", searchPattern.Pattern ?? "", e.Message));
+                        return false;
+                    }
                 }
-                catch (Exception e)
+            }
+
+            foreach(var condition in rule.Conditions ?? Array.Empty<SearchCondition>())
+            {
+                if (condition.SearchIn is null)
                 {
-                    _logger?.Error(MsgHelp.FormatString(MsgHelp.ID.VERIFY_RULES_REGEX_FAIL, rule.Id??"", searchPattern.Pattern??"", e.Message));
-                    isValid = false;
-                    break;
+                    _logger?.Error("SearchIn is null in {0}",rule.Id);
+                    return false;
+                }
+                if (condition.SearchIn.StartsWith("finding-region"))
+                {
+                    var parSplits = condition.SearchIn.Split(new char[] { ')', '(' });
+                    if (parSplits.Length == 3)
+                    {
+                        var splits = parSplits[1].Split(',');
+                        if (splits.Length == 2)
+                        {
+                            if (int.TryParse(splits[0], out int int1) && int.TryParse(splits[1], out int int2))
+                            {
+                                if (int1 == 0 && int2 == 0)
+                                {
+                                    _logger?.Error("At least one finding region specifier must be non 0. {0}", rule.Id);
+                                    return false;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            _logger?.Error("Improperly specified finding region. {0}", rule.Id);
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        _logger?.Error("Improperly specified finding region. {0}", rule.Id);
+                        return false;
+                    }
                 }
             }
 
@@ -156,6 +212,7 @@ namespace Microsoft.ApplicationInspector.Commands
         #region basicFileIO
         private void LoadDirectory(string? path)
         {
+            if (path is null) { return; }
             foreach (string filename in Directory.EnumerateFileSystemEntries(path, "*.json", SearchOption.AllDirectories))
             {
                 LoadFile(filename);

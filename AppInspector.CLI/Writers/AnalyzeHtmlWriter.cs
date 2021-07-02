@@ -3,6 +3,7 @@
 
 using DotLiquid;
 using DotLiquid.FileSystems;
+using Microsoft.ApplicationInspector.Common;
 using Microsoft.ApplicationInspector.Commands;
 using Microsoft.ApplicationInspector.RulesEngine;
 using Newtonsoft.Json;
@@ -11,7 +12,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -47,7 +47,6 @@ namespace Microsoft.ApplicationInspector.CLI
             _appMetaData = _analyzeResult.Metadata;
 
             PopulateTagGroups();
-            WriteJsonResult();//dep link from html content
             WriteHtmlResult();
         }
 
@@ -56,8 +55,8 @@ namespace Microsoft.ApplicationInspector.CLI
             RenderResultsSafeforHTML();
 
             //Grab any local css and js files that are needed i.e. don't have hosted URL's or are proprietary
-            string allCSS = "<style>\n" + MergeResourceFiles(Path.Combine(Utils.GetPath(Utils.AppPath.basePath), "html","resources","css"));
-            string allJS = "<script type=\"text/javascript\">\n" + MergeResourceFiles(Path.Combine(Utils.GetPath(Utils.AppPath.basePath),"html","resources","js"));
+            string allCSS = "<style>\n" + MergeResourceFiles(Path.Combine(Utils.GetPath(Utils.AppPath.basePath), "html", "resources", "css"));
+            string allJS = "<script type=\"text/javascript\">\n" + MergeResourceFiles(Path.Combine(Utils.GetPath(Utils.AppPath.basePath), "html", "resources", "js"));
 
             //Prepare html template merge
             string htmlTemplateText = File.ReadAllText(Path.Combine(Utils.GetPath(Utils.AppPath.basePath), "html/index.html"));
@@ -65,14 +64,14 @@ namespace Microsoft.ApplicationInspector.CLI
 
             //Update template with local aggregated code for easy relocation of output file
             htmlTemplateText = htmlTemplateText.Replace("<script type=\"text/javascript\">", allJS);
-            htmlTemplateText = htmlTemplateText.Replace("<link rel=\"stylesheet\" type=\"text/css\" href=\"html/resources/css/appinspector.css\" />", allCSS+"</style>");
+            htmlTemplateText = htmlTemplateText.Replace("<link rel=\"stylesheet\" type=\"text/css\" href=\"html/resources/css/appinspector.css\" />", allCSS + "</style>");
 
             RegisterSafeType(typeof(MetaData));
 
             //Prepare data for use in appinspector.js and html partials resources
             var htmlTemplate = Template.Parse(htmlTemplateText);
             var data = new Dictionary<string, object>();
-            data["MetaData"] = _appMetaData ?? new MetaData("","");
+            data["MetaData"] = _appMetaData ?? new MetaData("", "");
 
             var hashData = new Hash();
             hashData["json"] = JsonConvert.SerializeObject(data);//json serialization required for [js] access to objects
@@ -100,27 +99,6 @@ namespace Microsoft.ApplicationInspector.CLI
             var htmlResult = htmlTemplate.Render(hashData);
             TextWriter?.Write(htmlResult);
             FlushAndClose();
-        }
-
-        private void WriteJsonResult()
-        {
-            //writes out json report for convenient link from report summary page(s)
-            CLIAnalyzeCmdOptions jsonOptions = new CLIAnalyzeCmdOptions()
-            {
-                OutputFileFormat = "json",
-                OutputFilePath = "output.json"
-            };
-
-            //quiet normal write noise for json writter to just gen the file; then restore
-            WriteOnce.ConsoleVerbosity saveVerbosity = WriteOnce.Verbosity;
-            WriteOnce.Verbosity = WriteOnce.ConsoleVerbosity.None;
-            CommandResultsWriter? resultsWriter = WriterFactory.GetWriter(jsonOptions);
-            AnalyzeJsonWriter? jsonWriter = resultsWriter != null ? (AnalyzeJsonWriter)resultsWriter : null;
-            if (_analyzeResult != null)
-            {
-                jsonWriter?.WriteResults(_analyzeResult, jsonOptions);
-            }
-            WriteOnce.Verbosity = saveVerbosity;
         }
 
         private void RegisterSafeType(Type type)
@@ -235,7 +213,7 @@ namespace Microsoft.ApplicationInspector.CLI
             string[] unSupportedGroupsOrPatterns = new string[] { "metric", "dependency" };
 
             //for each preferred group of tag patterns determine if at least one instance was detected
-            foreach (TagCategory tagCategory in TagGroupPreferences)
+            foreach (TagCategory tagCategory in TagGroupPreferences ?? new List<TagCategory>())
             {
                 foreach (TagGroup tagGroup in tagCategory.Groups ?? new List<TagGroup>())
                 {
@@ -253,10 +231,10 @@ namespace Microsoft.ApplicationInspector.CLI
 
                     foreach (TagSearchPattern pattern in tagGroup.Patterns ?? new List<TagSearchPattern>())
                     {
-                        pattern.Detected = _appMetaData != null && _appMetaData.UniqueTags.Any(v => v.Contains(pattern.SearchPattern));
+                        pattern.Detected = _appMetaData?.UniqueTags is not null && _appMetaData.UniqueTags.Any(v => v == pattern.SearchPattern);
                         if (unSupportedGroupsOrPatterns.Any(x => pattern.SearchPattern.ToLower().Contains(x)))
                         {
-                            WriteOnce.Log?.Warn($"Unsupported tag group or pattern detected '{pattern.SearchPattern}'.  See online documentation at https://github.com/microsoft/ApplicationInspector/wiki/3.5-Tags"); 
+                            WriteOnce.Log?.Warn($"Unsupported tag group or pattern detected '{pattern.SearchPattern}'.  See online documentation at https://github.com/microsoft/ApplicationInspector/wiki/3.5-Tags");
                         }
 
                         //create dynamic "category" groups of tags with pattern relationship established from TagReportGroups.json
@@ -339,56 +317,76 @@ namespace Microsoft.ApplicationInspector.CLI
                 if (pattern.Detected)//set at program.RollUp already so don't search for again
                 {
                     var tagPatternRegex = pattern.Expression;
-
-                    foreach (var match in _appMetaData?.Matches ?? new List<MatchRecord>())
+                    if (_appMetaData?.TotalMatchesCount > 0)
                     {
-                        foreach (var tagItem in match.Tags ?? new string[] { })
+                        foreach (var match in _appMetaData?.Matches ?? new List<MatchRecord>())
                         {
-                            if (tagPatternRegex.IsMatch(tagItem))
+                            foreach (var tagItem in match.Tags ?? new string[] { })
                             {
-                                if (!hashSet.Contains(pattern.SearchPattern))
+                                if (tagPatternRegex.IsMatch(tagItem))
                                 {
-                                    result.Add(new TagInfo
+                                    if (!hashSet.Contains(pattern.SearchPattern))
                                     {
-                                        Tag = tagItem,
-                                        Confidence = match.Confidence.ToString(),
-                                        Severity = match.Severity.ToString(),
-                                        ShortTag = pattern.DisplayName,
-                                        StatusIcon = pattern.DetectedIcon,
-                                        Detected = true
-                                    });
-
-                                    hashSet.Add(pattern.SearchPattern);
-
-                                    pattern.Confidence = match.Confidence.ToString();
-                                }
-                                else
-                                {
-                                    //ensure we get highest confidence, severity as there are likely multiple matches for this tag pattern
-                                    foreach (TagInfo updateItem in result)
-                                    {
-                                        if (updateItem.Tag == tagItem)
+                                        result.Add(new TagInfo
                                         {
-                                            Confidence oldConfidence;
-                                            Enum.TryParse(updateItem.Confidence, out oldConfidence);
+                                            Tag = tagItem,
+                                            Confidence = match.Confidence.ToString(),
+                                            Severity = match.Severity.ToString(),
+                                            ShortTag = pattern.DisplayName,
+                                            StatusIcon = pattern.DetectedIcon,
+                                            Detected = true
+                                        });
 
-                                            if (match.Confidence > oldConfidence)
+                                        hashSet.Add(pattern.SearchPattern);
+
+                                        pattern.Confidence = match.Confidence.ToString();
+                                    }
+                                    else
+                                    {
+                                        //ensure we get highest confidence, severity as there are likely multiple matches for this tag pattern
+                                        foreach (TagInfo updateItem in result)
+                                        {
+                                            if (updateItem.Tag == tagItem)
                                             {
-                                                updateItem.Confidence = match.Confidence.ToString();
-                                                pattern.Confidence = match.Confidence.ToString();
-                                            }
+                                                Confidence oldConfidence;
+                                                Enum.TryParse(updateItem.Confidence, out oldConfidence);
 
-                                            Severity oldSeverity;
-                                            Enum.TryParse(updateItem.Severity, out oldSeverity);
-                                            if (match.Severity > oldSeverity)
-                                            {
-                                                updateItem.Severity = match.Severity.ToString();
-                                            }
+                                                if (match.Confidence > oldConfidence)
+                                                {
+                                                    updateItem.Confidence = match.Confidence.ToString();
+                                                    pattern.Confidence = match.Confidence.ToString();
+                                                }
 
-                                            break;
+                                                Severity oldSeverity;
+                                                Enum.TryParse(updateItem.Severity, out oldSeverity);
+                                                if (match.Severity > oldSeverity)
+                                                {
+                                                    updateItem.Severity = match.Severity.ToString();
+                                                }
+
+                                                break;
+                                            }
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        foreach (var tagItem in _appMetaData?.UniqueTags ?? new List<string>())
+                        {
+                            if (tagPatternRegex.IsMatch(tagItem) && !hashSet.Contains(pattern.SearchPattern))
+                            {
+                                result.Add(new TagInfo
+                                {
+                                    Tag = tagItem,
+                                    ShortTag = pattern.DisplayName,
+                                    StatusIcon = pattern.DetectedIcon,
+                                    Detected = true
+                                });
+
+                                hashSet.Add(tagItem);
                             }
                         }
                     }
@@ -497,26 +495,37 @@ namespace Microsoft.ApplicationInspector.CLI
 
             foreach (string tag in _appMetaData?.UniqueTags ?? new List<string>())
             {
-                foreach (var match in _appMetaData?.Matches ?? new List<MatchRecord>())
+                if (_appMetaData?.TotalMatchesCount > 0)
                 {
-                    foreach (string testTag in match.Tags ?? new string[] { })
+                    foreach (var match in _appMetaData?.Matches ?? new List<MatchRecord>())
                     {
-                        if (tag == testTag)
+                        foreach (string testTag in match.Tags ?? new string[] { })
                         {
-                            if (dupCheck.Add(testTag))
+                            if (tag == testTag)
                             {
-                                result.Add(new TagInfo
+                                if (dupCheck.Add(testTag))
                                 {
-                                    Tag = testTag,
-                                    Confidence = match.Confidence.ToString(),
-                                    Severity = match.Severity.ToString(),
-                                    ShortTag = testTag.Substring(testTag.LastIndexOf('.') + 1),
-                                });
+                                    result.Add(new TagInfo
+                                    {
+                                        Tag = testTag,
+                                        Confidence = match.Confidence.ToString(),
+                                        Severity = match.Severity.ToString(),
+                                        ShortTag = testTag.Substring(testTag.LastIndexOf('.') + 1),
+                                    });
 
-                                break;
+                                    break;
+                                }
                             }
                         }
                     }
+                }
+                else
+                {
+                    result.Add(new TagInfo
+                    {
+                        Tag = tag,
+                        ShortTag = tag.Substring(tag.LastIndexOf('.') + 1),
+                    });
                 }
             }
 
@@ -533,7 +542,7 @@ namespace Microsoft.ApplicationInspector.CLI
             HashSet<string> dupCheck = new HashSet<string>();
             RulesEngine.Confidence[] confidences = { Confidence.High, Confidence.Medium, Confidence.Low };
 
-            foreach (string tag in _appMetaData?.UniqueTags?? new List<string>())
+            foreach (string tag in _appMetaData?.UniqueTags ?? new List<string>())
             {
                 var searchPattern = new Regex(tag, RegexOptions.IgnoreCase);
                 foreach (Confidence confidence in confidences)

@@ -3,9 +3,7 @@
     "name": "Pipeline Tool (AntiMalware)",
     "id": "AI053300",
     "description": "General AntiMalware",
-    "tags": [
-      "Metadata.Pipeline.StaticAnalysis.AntiMalware"
-    ],
+    "tags":[ "Pipeline.StaticAnalysis.AntiMalware" ],
     "severity": "critical",
     "patterns": [
       {
@@ -13,8 +11,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   },
@@ -22,9 +19,7 @@
     "name": "Pipeline Tool (Bandit)",
     "id": "AI053400",
     "description": "Finds vulnerabilities in Python code.",
-    "tags": [
-      "Metadata.Pipeline.StaticAnalysis.Bandit"
-    ],
+    "tags":[ "Pipeline.StaticAnalysis.Bandit" ],
     "severity": "critical",
     "patterns": [
       {
@@ -32,8 +27,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   },
@@ -41,9 +35,7 @@
     "name": "Pipeline Tool (BinSkim)",
     "id": "AI053500",
     "description": "Validates compiler and linker security settings.",
-    "tags": [
-      "Metadata.Pipeline.CompilerSettings.BinSkim"
-    ],
+    "tags":[ "Pipeline.CompilerSettings.BinSkim" ],
     "severity": "critical",
     "patterns": [
       {
@@ -51,8 +43,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   },
@@ -60,14 +51,12 @@
     "name": "Pipeline Tool (CodeSigning)",
     "id": "AI053600",
     "description": "General code signing.",
-    "tags": [
-      "Metadata.Pipeline.Packaging.CodeSigning"
-    ],
+    "tags":[ "Pipeline.Packaging.CodeSigning" ],
     "severity": "critical",
     "patterns": [
       {
         "pattern": "CodeSign",
-        "type": "regex",
+        "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
         "confidence": "high",
@@ -79,9 +68,7 @@
     "name": "Pipeline Tool (CodeQL)",
     "id": "AI053700",
     "description": "Identifies patterns in code.",
-    "tags": [
-      "Metadata.Pipeline.StaticAnalysis.CodeQL"
-    ],
+    "tags":[ "Pipeline.StaticAnalysis.CodeQL" ],
     "severity": "critical",
     "patterns": [
       {
@@ -89,8 +76,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   },
@@ -98,9 +84,7 @@
     "name": "Pipeline Tool (ESLint)",
     "id": "AI053800",
     "description": "Identifies problematic coding patterns in JavaScript.",
-    "tags": [
-      "Metadata.Pipeline.Linter.ESLint"
-    ],
+    "tags":[ "Pipeline.Linter.ESLint" ],
     "severity": "critical",
     "patterns": [
       {
@@ -108,8 +92,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   },
@@ -117,9 +100,7 @@
     "name": "Pipeline Tool (FxCop)",
     "id": "AI053900",
     "description": "Analyzer that checks conformance to Microsoft .NET Design Guidelines.",
-    "tags": [
-      "Metadata.Pipeline.StaticAnalysis.FxCop"
-    ],
+    "tags":[ "Pipeline.StaticAnalysis.FxCop" ],
     "severity": "critical",
     "patterns": [
       {
@@ -127,8 +108,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   },
@@ -136,9 +116,7 @@
     "name": "Pipeline Tool (ModernCop)",
     "id": "AI054000",
     "description": "Analyzer that checks for security vulnerabilities in .NET code.",
-    "tags": [
-      "Metadata.Pipeline.StaticAnalysis.ModernCop"
-    ],
+    "tags":[ "Pipeline.StaticAnalysis.ModernCop" ],
     "severity": "critical",
     "patterns": [
       {
@@ -146,8 +124,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   },
@@ -155,9 +132,7 @@
     "name": "Pipeline Tool (NuGetCommand)",
     "id": "AI054100",
     "description": "Identifies package manager commands for NuGet.",
-    "tags": [
-      "Metadata.Pipeline.Packaging.NuGetCommand"
-    ],
+    "tags":[ "Pipeline.Packaging.NuGetCommand" ],
     "severity": "critical",
     "patterns": [
       {
@@ -165,8 +140,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   },
@@ -174,9 +148,7 @@
     "name": "Pipeline Tool (RoslynAnalyzers)",
     "id": "AI054200",
     "description": "Identifies style, quality, design and other code characteristics.",
-    "tags": [
-      "Metadata.Pipeline.StaticAnalysis.RoslynAnalyzers"
-    ],
+    "tags":[ "Pipeline.StaticAnalysis.RoslynAnalyzers" ],
     "severity": "critical",
     "patterns": [
       {
@@ -184,8 +156,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   },
@@ -193,9 +164,7 @@
     "name": "Pipeline Tool (SpotBugs)",
     "id": "AI054300",
     "description": "Vulnerability detection for Java code.",
-    "tags": [
-      "Metadata.Pipeline.StaticAnalysis.SpotBugs"
-    ],
+    "tags":[ "Pipeline.StaticAnalysis.SpotBugs" ],
     "severity": "critical",
     "patterns": [
       {
@@ -203,8 +172,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   },
@@ -212,9 +180,7 @@
     "name": "Pipeline Tool (TSLint)",
     "id": "AI054400",
     "description": "Checks TypeScript for readability and functionality errors.",
-    "tags": [
-      "Metadata.Pipeline.Linter.TSLint"
-    ],
+    "tags":[ "Pipeline.Linter.TSLint" ],
     "severity": "critical",
     "patterns": [
       {
@@ -222,8 +188,7 @@
         "type": "string",
         "scopes": [ "code"],
         "modifiers": [ "i" ],
-        "confidence": "high",
-        "_comment": ""
+        "confidence": "high"
       }
     ]
   }

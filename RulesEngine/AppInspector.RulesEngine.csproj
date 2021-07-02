@@ -2,7 +2,7 @@
 
   <PropertyGroup>
   	<OutputType>Library</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>    
+    <TargetFramework>net5.0</TargetFramework>    
     <PackageId>Microsoft.ApplicationInspector.RulesEngine</PackageId>
     <PackageVersion>0.0.0-placeholder</PackageVersion>
     <Authors>Microsoft</Authors>
@@ -21,12 +21,15 @@
     <FileVersion>0.0.0.0</FileVersion>
     <AssemblyVersion>0.0.0.0</AssemblyVersion>
     <Nullable>enable</Nullable>
+    <LangVersion>9.0</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.CST.OAT" Version="1.0.74" />
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
-    <PackageReference Include="NLog" Version="4.7.5" />
+    <PackageReference Include="Microsoft.CST.OAT" Version="1.0.85" />
+    <PackageReference Include="Microsoft.CST.RecursiveExtractor" Version="1.0.64" />
+    <PackageReference Update="Nerdbank.GitVersioning" Version="3.4.203" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <PackageReference Include="NLog" Version="4.7.10" />
   </ItemGroup>
 
   <ItemGroup>
@@ -40,7 +43,7 @@
   </ItemGroup>
   
   <ItemGroup>
-    <PackageReference Update="Nerdbank.GitVersioning" Version="3.3.37" />
+    <ProjectReference Include="..\AppInspector.Common\AppInspector.Common.csproj" />
   </ItemGroup>
-
+  
 </Project>

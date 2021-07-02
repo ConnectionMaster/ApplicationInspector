@@ -2,6 +2,7 @@
 // Licensed under the MIT License. See LICENSE.txt in the project root for license information.
 
 using Newtonsoft.Json;
+using System;
 
 namespace Microsoft.ApplicationInspector.RulesEngine
 {
@@ -17,40 +18,52 @@ namespace Microsoft.ApplicationInspector.RulesEngine
         public MatchRecord(Rule rule)
         {
             Rule = rule;
+            RuleId = rule.Id;
+            RuleName = rule.Name;
+            RuleDescription = rule.Description;
+            Tags = rule.Tags;
+            Severity = rule.Severity;
+        }
+
+        [JsonConstructor]
+        public MatchRecord(string ruleId, string ruleName)
+        {
+            RuleId = ruleId;
+            RuleName = ruleName;
         }
 
         [JsonIgnore]
-        public Rule Rule;
+        public Rule? Rule { get; set; }
 
         /// <summary>
         /// Rule Id found in matching rule
         /// </summary>
         [JsonProperty(PropertyName = "ruleId")]
-        public string RuleId => Rule.Id;
+        public string RuleId { get; set; }
 
         /// <summary>
         /// Rule name found in matching rule
         /// </summary>
         [JsonProperty(PropertyName = "ruleName")]
-        public string RuleName => Rule.Name;
+        public string RuleName { get; set;  }
 
         /// <summary>
         /// Rule description found in matching rule
         /// </summary>
         [JsonProperty(PropertyName = "ruleDescription")]
-        public string? RuleDescription => Rule.Description;
+        public string? RuleDescription { get; set; }
 
         /// <summary>
         /// Tags in matching rule
         /// </summary>
         [JsonProperty(PropertyName = "tags")]
-        public string[]? Tags => Rule.Tags;
+        public string[]? Tags { get; set;  }
 
         /// <summary>
         /// Rule severity
         /// </summary>_rule
         [JsonProperty(PropertyName = "severity")]
-        public Severity Severity => Rule.Severity;
+        public Severity Severity { get; set;  }
 
         [JsonIgnore]
         public SearchPattern? MatchingPattern { get; set; }
@@ -77,10 +90,13 @@ namespace Microsoft.ApplicationInspector.RulesEngine
         /// Internal to namespace use only for capturing boundary excerpts and sample
         /// </summary>
         [JsonIgnore]
-        public string? FullText { get; set; }
+        public string? FullText { get { return FullTextContainer?.FullContent; } }
+
+        [JsonIgnore]
+        public TextContainer? FullTextContainer { get; set; }
 
         /// <summary>
-        /// Internal to namespace only 
+        /// Internal to namespace only
         /// </summary>
         [JsonIgnore]
         public LanguageInfo LanguageInfo { get; set; } = new LanguageInfo();

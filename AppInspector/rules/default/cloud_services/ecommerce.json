@@ -3,15 +3,13 @@
     "name": "CloudServices: Financial (eCommerce)",
     "id": "AI003600",
     "description": "Data: Financial (eCommerce)",
-    "tags": [
-      "CloudServices.Finance.eCommerce"
-    ],
+    "tags":[ "CloudServices.Finance.eCommerce" ],
     "severity": "critical",
     "patterns": [
       {
-        "pattern": "pci|wallet|fips-140",
-        "type": "regex-word",
-        "scopes": [ "code" ],
+        "pattern": "wallet|fips-140",
+        "type": "regexword",
+        "scopes": [ "code", "comment" ],
         "modifiers": [ "i" ],
         "confidence": "medium"
       },
@@ -24,7 +22,7 @@
       },
       {
         "pattern": "price|shopping chart|payment",
-        "type": "regex-word",
+        "type": "regexword",
         "scopes": [ "code", "comment" ],
         "modifiers": [ "i" ]
       },
@@ -37,7 +35,7 @@
       },
       {
         "pattern": "demandware|yocart|opencart|magento|magentohost\/api|volusion|x-vtex-api-appkey|alibaba|apple.*pay",
-        "type": "regex-word",
+        "type": "regexword",
         "scopes": [ "code", "comment" ],
         "modifiers": [ "i" ],
         "confidence": "high"

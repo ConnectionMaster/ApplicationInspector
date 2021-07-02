@@ -267,3 +267,5 @@ __pycache__/
 /AppInspector/ApplicationInspector.Commands.xml
 AppInspector/Resources/defaultRulesPkd.json
 /AppInspector.CLI/Properties/launchSettings.json
+RulesPacker/appinspector.log.txt
+AppInspector/appinspector.log.txt

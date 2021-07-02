@@ -1,18 +1,34 @@
 ﻿// Copyright (C) Microsoft. All rights reserved.
 // Licensed under the MIT License. See LICENSE.txt in the project root for license information.
 
+using Microsoft.ApplicationInspector.Common;
+using Microsoft.CST.OAT;
+using Microsoft.CST.RecursiveExtractor;
 using NLog;
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using Microsoft.CST.OAT;
-using System.Security.Cryptography.X509Certificates;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Microsoft.ApplicationInspector.RulesEngine
 {
+    public class RuleProcessorOptions
+    {
+        public RuleProcessorOptions()
+        {
+        }
+        public bool Parallel = true;
+        public Confidence confidenceFilter;
+        public Logger? logger;
+        public bool treatEverythingAsCode = false;
+    }
+
     /// <summary>
     /// Heart of RulesEngine. Parses code applies rules
     /// </summary>
@@ -20,80 +36,110 @@ namespace Microsoft.ApplicationInspector.RulesEngine
     {
         private readonly int MAX_TEXT_SAMPLE_LENGTH = 200;//char bytes
 
-        private Confidence ConfidenceLevelFilter { get; set; }
-        private readonly bool _stopAfterFirstMatch;
-        private readonly bool _uniqueTagMatchesOnly;
+        private Confidence ConfidenceLevelFilter { get; }
         private readonly Logger? _logger;
+        private readonly bool _treatEverythingAsCode;
         private readonly Analyzer analyzer;
         private readonly RuleSet _ruleset;
-        private readonly ConcurrentDictionary<string, byte> _uniqueTagHashes;
-        private readonly ConcurrentDictionary<string, IEnumerable<ConvertedOatRule>> _rulesCache;
-        private readonly List<MatchRecord> _runningResultsList;//maintain across files for bestmatch compare
-        private readonly object _controllRunningListAdd;//safeguard shared list across threads
-        /// <summary>
-        /// Support to exlude list of tags from unique restrictions
-        /// </summary>
-        public string[]? UniqueTagExceptions { get; set; }
+        private readonly ConcurrentDictionary<string, IEnumerable<ConvertedOatRule>> _fileRulesCache = new();
+        private readonly ConcurrentDictionary<string, IEnumerable<ConvertedOatRule>> _languageRulesCache = new();
+        private IEnumerable<ConvertedOatRule>? _universalRulesCache;
 
         /// <summary>
         /// Sets severity levels for analysis
         /// </summary>
-        private Severity SeverityLevel { get; set; }
+        private Severity SeverityLevel { get; }
 
         /// <summary>
         /// Enables caching of rules queries if multiple reuses per instance
         /// </summary>
-        private bool EnableCache { get; set; }
+        private bool EnableCache { get; }
 
         /// <summary>
         /// Creates instance of RuleProcessor
         /// </summary>
-        public RuleProcessor(RuleSet rules, Confidence confidenceFilter, Logger? logger, bool uniqueMatches = false, bool stopAfterFirstMatch = false)
+        public RuleProcessor(RuleSet rules, RuleProcessorOptions opts)
         {
             _ruleset = rules;
             EnableCache = true;
-            _uniqueTagHashes = new ConcurrentDictionary<string,byte>();
-            _rulesCache = new ConcurrentDictionary<string, IEnumerable<ConvertedOatRule>>();
-            _runningResultsList = new List<MatchRecord>();
-            _controllRunningListAdd = new object();
-            _stopAfterFirstMatch = stopAfterFirstMatch;
-            _uniqueTagMatchesOnly = uniqueMatches;
-            _logger = logger;
-            ConfidenceLevelFilter = confidenceFilter;
+            _logger = opts.logger;
+            _treatEverythingAsCode = opts.treatEverythingAsCode;
+            ConfidenceLevelFilter = opts.confidenceFilter;
             SeverityLevel = Severity.Critical | Severity.Important | Severity.Moderate | Severity.BestPractice; //finds all; arg not currently supported
 
-            analyzer = new Analyzer();
+            analyzer = new Analyzer(new AnalyzerOptions(false, opts.Parallel));
             analyzer.SetOperation(new WithinOperation(analyzer));
-            analyzer.SetOperation(new OATRegexWithIndexOperation(analyzer)); //CHECK with OAT team as delegate doesn't appear to fire; ALT working fine in Analyze method anyway
+            analyzer.SetOperation(new OATRegexWithIndexOperation(analyzer));
+            analyzer.SetOperation(new OATSubstringIndexOperation(analyzer));
         }
 
-        public List<MatchRecord> AllResults => _runningResultsList;
-
-        /// <summary>
-        /// Analyzes given line of code returning matching scan results for the
-        /// file passed in only; Use AllResults to get results across the entire set
-        /// </summary>
-        /// <param name="text">Source code</param>
-        /// <param name="languages">List of languages</param>
-        /// <returns>Array of matches</returns>
-        public MatchRecord[] AnalyzeFile(string filePath, string text, LanguageInfo languageInfo)
+        private static string ExtractDependency(TextContainer? text, int startIndex, string? pattern, string? language)
         {
-            // Get rules for the given content type
-            IEnumerable<ConvertedOatRule> rules = GetRulesForSingleLanguage(languageInfo.Name).Where(x => !x.AppInspectorRule.Disabled && SeverityLevel.HasFlag(x.AppInspectorRule.Severity));
-            List<MatchRecord> resultsList = new List<MatchRecord>();//matches for this file only
-            TextContainer textContainer = new TextContainer(text, languageInfo.Name);
-
-            foreach (var ruleCapture in analyzer.GetCaptures(rules, textContainer))
+            if (text is null || string.IsNullOrEmpty(text.FullContent) || string.IsNullOrEmpty(language) || string.IsNullOrEmpty(pattern))
             {
+                return string.Empty;
+            }
 
-                foreach (var cap in ruleCapture.Captures)
+            string rawResult = string.Empty;
+            int endIndex = text.FullContent.IndexOfAny(new char[] { '\n', '\r' }, startIndex);
+            if (-1 != startIndex && -1 != endIndex)
+            {
+                rawResult = text.FullContent[startIndex..endIndex].Trim();
+                Regex regex = new(pattern ?? string.Empty);
+                MatchCollection matches = regex.Matches(rawResult);
+
+                //remove surrounding import or trailing comments
+                if (matches?.Any() == true)
                 {
-                    ProcessBoundary(cap);
+                    foreach (Match? match in matches)
+                    {
+                        if (match?.Groups.Count == 1)//handles cases like "using Newtonsoft.Json"
+                        {
+                            string[] parseValues = match.Groups[0].Value.Split(' ');
+                            if (parseValues.Length == 1)
+                            {
+                                rawResult = parseValues[0].Trim();
+                            }
+                            else if (parseValues.Length > 1)
+                            {
+                                rawResult = parseValues[1].Trim(); //should be value; time will tell if fullproof
+                            }
+                        }
+                        else if (match?.Groups.Count > 1)//handles cases like include <stdio.h>
+                        {
+                            rawResult = match.Groups[1].Value.Trim();
+                        }
+                        //else if > 2 too hard to match; do nothing
+
+                        break;//only designed to expect one match per line i.e. not include value include value
+                    }
                 }
 
-                void ProcessBoundary(ClauseCapture cap)
+                string finalResult = rawResult.Replace(";", "");
+
+                return System.Net.WebUtility.HtmlEncode(finalResult);
+            }
+
+            return rawResult;
+        }
+
+        public List<MatchRecord> AnalyzeFile(string contents, FileEntry fileEntry, LanguageInfo languageInfo, IEnumerable<string>? tagsToIgnore = null, int numLinesContext = 3)
+        {
+            var rules = GetRulesForFile(languageInfo, fileEntry, tagsToIgnore);
+            List<MatchRecord> resultsList = new();
+
+            TextContainer textContainer = new(contents, languageInfo.Name);
+            var caps = analyzer.GetCaptures(rules, textContainer).ToList();
+            foreach (var ruleCapture in caps)
+            {
+                foreach (var cap in ruleCapture.Captures)
                 {
-                    List<MatchRecord> newMatches = new List<MatchRecord>();//matches for this rule clause only
+                    resultsList.AddRange(ProcessBoundary(cap));
+                }
+
+                List<MatchRecord> ProcessBoundary(ClauseCapture cap)
+                {
+                    List<MatchRecord> newMatches = new();//matches for this rule clause only
 
                     if (cap is TypedClauseCapture<List<(int, Boundary)>> tcc)
                     {
@@ -107,7 +153,139 @@ namespace Microsoft.ApplicationInspector.RulesEngine
                                     var boundary = match.Item2;
 
                                     //restrict adds from build files to tags with "metadata" only to avoid false feature positives that are not part of executable code
-                                    if (languageInfo.Type == LanguageInfo.LangFileType.Build && oatRule.AppInspectorRule.Tags.Any(v => !v.Contains("Metadata")))
+                                    if (!_treatEverythingAsCode && languageInfo.Type == LanguageInfo.LangFileType.Build && (oatRule.AppInspectorRule.Tags?.Any(v => !v.Contains("Metadata")) ?? false))
+                                    {
+                                        continue;
+                                    }
+
+                                    if (!ConfidenceLevelFilter.HasFlag(oatRule.AppInspectorRule.Patterns[patternIndex].Confidence))
+                                    {
+                                        continue;
+                                    }
+
+                                    Location StartLocation = textContainer.GetLocation(boundary.Index);
+                                    Location EndLocation = textContainer.GetLocation(boundary.Index + boundary.Length);
+                                    MatchRecord newMatch = new(oatRule.AppInspectorRule)
+                                    {
+                                        FileName = fileEntry.FullPath,
+                                        FullTextContainer = textContainer,
+                                        LanguageInfo = languageInfo,
+                                        Boundary = boundary,
+                                        StartLocationLine = StartLocation.Line,
+                                        StartLocationColumn = StartLocation.Column,
+                                        EndLocationLine = EndLocation.Line != 0 ? EndLocation.Line : StartLocation.Line + 1, //match is on last line
+                                        EndLocationColumn = EndLocation.Column,
+                                        MatchingPattern = oatRule.AppInspectorRule.Patterns[patternIndex],
+                                        Excerpt = numLinesContext > 0 ? ExtractExcerpt(textContainer, StartLocation.Line, numLinesContext) : string.Empty,
+                                        Sample = numLinesContext > -1 ? ExtractTextSample(textContainer.FullContent, boundary.Index, boundary.Length) : string.Empty
+                                    };
+
+                                    if (oatRule.AppInspectorRule.Tags?.Contains("Dependency.SourceInclude") ?? false)
+                                    {
+                                        newMatch.Sample = ExtractDependency(newMatch.FullTextContainer, newMatch.Boundary.Index, newMatch.Pattern, newMatch.LanguageInfo.Name);
+                                    }
+
+                                    newMatches.Add(newMatch);
+                                }
+                            }
+                        }
+                    }
+                    return newMatches;
+                }
+            }
+
+            List<MatchRecord> removes = new();
+
+            foreach (MatchRecord m in resultsList.Where(x => x.Rule.Overrides?.Length > 0))
+            {
+                foreach (string ovrd in m.Rule?.Overrides ?? Array.Empty<string>())
+                {
+                    // Find all overriden rules and mark them for removal from issues list
+                    foreach (MatchRecord om in resultsList.FindAll(x => x.Rule.Id == ovrd))
+                    {
+                        if (om.Boundary?.Index >= m.Boundary?.Index &&
+                            om.Boundary?.Index <= m.Boundary?.Index + m.Boundary?.Length)
+                        {
+                            removes.Add(om);
+                        }
+                    }
+                }
+            }
+
+            // Remove overriden rules
+            resultsList.RemoveAll(x => removes.Contains(x));
+
+            return resultsList;
+        }
+
+        private IEnumerable<ConvertedOatRule> GetRulesForFile(LanguageInfo languageInfo, FileEntry fileEntry, IEnumerable<string>? tagsToIgnore)
+        {
+            var rulesByLanguage = GetRulesByLanguage(languageInfo.Name).Where(x => !x.AppInspectorRule.Disabled && SeverityLevel.HasFlag(x.AppInspectorRule.Severity));
+            var rules = rulesByLanguage.Union(GetRulesByFileName(fileEntry.FullPath).Where(x => !x.AppInspectorRule.Disabled && SeverityLevel.HasFlag(x.AppInspectorRule.Severity)));
+            rules = rules.Union(GetUniversalRules());
+            if (tagsToIgnore?.Any() == true)
+            {
+                rules = rules.Where(x => x.AppInspectorRule?.Tags?.Any(y => !tagsToIgnore.Contains(y)) ?? false);
+            }
+            return rules;
+        }
+
+        public List<MatchRecord> AnalyzeFile(FileEntry fileEntry, LanguageInfo languageInfo, IEnumerable<string>? tagsToIgnore = null, int numLinesContext = 3)
+        {
+            using var sr = new StreamReader(fileEntry.Content);
+            var contents = string.Empty;
+            try
+            {
+                contents = sr.ReadToEnd();
+            }
+            catch(Exception e)
+            {
+                WriteOnce.SafeLog($"Failed to analyze file {fileEntry.FullPath}. {e.GetType()}:{e.Message}. ({e.StackTrace})", LogLevel.Debug);
+            }
+            if (!string.IsNullOrEmpty(contents))
+            {
+                return AnalyzeFile(contents, fileEntry, languageInfo, tagsToIgnore, numLinesContext);
+            }
+            return new List<MatchRecord>();
+        }
+
+        public async Task<List<MatchRecord>> AnalyzeFileAsync(FileEntry fileEntry, LanguageInfo languageInfo, CancellationToken cancellationToken, IEnumerable<string>? tagsToIgnore = null, int numLinesContext = 3)
+        {
+            var rules = GetRulesForFile(languageInfo, fileEntry, tagsToIgnore);
+
+            List<MatchRecord> resultsList = new();
+
+            using var sr = new StreamReader(fileEntry.Content);
+
+            TextContainer textContainer = new(await sr.ReadToEndAsync().ConfigureAwait(false), languageInfo.Name);
+            foreach (var ruleCapture in analyzer.GetCaptures(rules, textContainer))
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return resultsList;
+                }
+                foreach (var cap in ruleCapture.Captures)
+                {
+                    resultsList.AddRange(ProcessBoundary(cap));
+                }
+
+                List<MatchRecord> ProcessBoundary(ClauseCapture cap)
+                {
+                    List<MatchRecord> newMatches = new();//matches for this rule clause only
+
+                    if (cap is TypedClauseCapture<List<(int, Boundary)>> tcc)
+                    {
+                        if (ruleCapture.Rule is ConvertedOatRule oatRule)
+                        {
+                            if (tcc?.Result is List<(int, Boundary)> captureResults)
+                            {
+                                foreach (var match in captureResults)
+                                {
+                                    var patternIndex = match.Item1;
+                                    var boundary = match.Item2;
+
+                                    //restrict adds from build files to tags with "metadata" only to avoid false feature positives that are not part of executable code
+                                    if (!_treatEverythingAsCode && languageInfo.Type == LanguageInfo.LangFileType.Build && (oatRule.AppInspectorRule.Tags?.Any(v => !v.Contains("Metadata")) ?? false))
                                     {
                                         continue;
                                     }
@@ -125,152 +303,84 @@ namespace Microsoft.ApplicationInspector.RulesEngine
 
                                     Location StartLocation = textContainer.GetLocation(boundary.Index);
                                     Location EndLocation = textContainer.GetLocation(boundary.Index + boundary.Length);
-                                    MatchRecord newMatch = new MatchRecord(oatRule.AppInspectorRule)
+                                    MatchRecord newMatch = new(oatRule.AppInspectorRule)
                                     {
-                                        FileName = filePath,
-                                        FullText = textContainer.FullContent,
+                                        FileName = fileEntry.FullPath,
+                                        FullTextContainer = textContainer,
                                         LanguageInfo = languageInfo,
                                         Boundary = boundary,
                                         StartLocationLine = StartLocation.Line,
-                                        EndLocationLine = EndLocation.Line != 0 ? EndLocation.Line : StartLocation.Line+1, //match is on last line
+                                        EndLocationLine = EndLocation.Line != 0 ? EndLocation.Line : StartLocation.Line + 1, //match is on last line
                                         MatchingPattern = oatRule.AppInspectorRule.Patterns[patternIndex],
-                                        Excerpt = ExtractExcerpt(textContainer.FullContent, StartLocation.Line), 
-                                        Sample = ExtractTextSample(textContainer.FullContent, boundary.Index, boundary.Length)
+                                        Excerpt = numLinesContext > 0 ? ExtractExcerpt(textContainer, StartLocation.Line, numLinesContext) : string.Empty,
+                                        Sample = numLinesContext > -1 ? ExtractTextSample(textContainer.FullContent, boundary.Index, boundary.Length) : string.Empty
                                     };
 
-                                    bool addNewRecord = true;
-                                    if (_uniqueTagMatchesOnly)
+                                    if (oatRule.AppInspectorRule.Tags?.Contains("Dependency.SourceInclude") ?? false)
                                     {
-                                        if (!RuleTagsAreUniqueOrAllowed(newMatch.Rule.Tags))
-                                        {
-                                            if (_stopAfterFirstMatch) 
-                                            {
-                                                addNewRecord = false; //we've seen already; don't improve the match
-                                            }
-                                            else if (newMatch.Confidence > Confidence.Low) //user prefers highest confidence match over first match
-                                            {
-                                                addNewRecord = BetterMatch(newMatches, newMatch) && BetterMatch(resultsList, newMatch);
-                                                if (addNewRecord)
-                                                {
-                                                    lock (_controllRunningListAdd)
-                                                    {
-                                                        addNewRecord = BetterMatch(_runningResultsList, newMatch);//check current rule matches and previous processed files
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        newMatch.Sample = ExtractDependency(newMatch.FullTextContainer, newMatch.Boundary.Index, newMatch.Pattern, newMatch.LanguageInfo.Name);
                                     }
 
-                                    if (addNewRecord)
-                                    {
-                                        newMatches.Add(newMatch);
-                                        lock (_controllRunningListAdd)
-                                        {
-                                            _runningResultsList.Add(newMatch);
-                                        }
-                                    }
-
-                                    AddRuleTagHashes(oatRule.AppInspectorRule.Tags ?? new string[] { "" });
+                                    newMatches.Add(newMatch);
                                 }
                             }
                         }
                     }
-
-                    resultsList.AddRange(newMatches);
+                    return newMatches;
                 }
             }
 
-            if (resultsList.Any(x => x.Rule.Overrides!=null && x.Rule.Overrides.Length > 0 ))
+            List<MatchRecord> removes = new();
+
+            foreach (MatchRecord m in resultsList.Where(x => x.Rule.Overrides?.Length > 0))
             {
-                // Deal with overrides
-                List<MatchRecord> removes = new List<MatchRecord>();
-                foreach (MatchRecord m in resultsList)
+                if (cancellationToken.IsCancellationRequested)
                 {
-                    if (m.Rule.Overrides != null && m.Rule.Overrides.Length > 0)
+                    return resultsList;
+                }
+                foreach (string ovrd in m.Rule?.Overrides ?? Array.Empty<string>())
+                {
+                    // Find all overriden rules and mark them for removal from issues list
+                    foreach (MatchRecord om in resultsList.FindAll(x => x.Rule.Id == ovrd))
                     {
-                        foreach (string ovrd in m.Rule.Overrides)
+                        if (om.Boundary?.Index >= m.Boundary?.Index &&
+                            om.Boundary?.Index <= m.Boundary?.Index + m.Boundary?.Length)
                         {
-                            // Find all overriden rules and mark them for removal from issues list
-                            foreach (MatchRecord om in resultsList.FindAll(x => x.Rule.Id == ovrd))
-                            {
-                                if (om.Boundary?.Index >= m.Boundary?.Index &&
-                                    om.Boundary?.Index <= m.Boundary?.Index + m.Boundary?.Length)
-                                    removes.Add(om);
-                            }
+                            removes.Add(om);
                         }
                     }
                 }
-
-                // Remove overriden rules
-                resultsList.RemoveAll(x => removes.Contains(x));
             }
 
-            return resultsList.ToArray();
+            // Remove overriden rules
+            resultsList.RemoveAll(x => removes.Contains(x));
+
+            return resultsList;
         }
 
-  
         #region Private Support Methods
 
         /// <summary>
-        /// Identify if new scan result is a better match than previous i.e. has a higher confidence.  Assumes unique list of MatchRecords.
+        ///     Filters the rules for those matching the content type. Resolves all the overrides
         /// </summary>
-        /// <param name="MatchRecords"></param>
-        /// <param name="compareResult"></param>
-        /// <param name="removeOld"></param>
-        /// <returns></returns>
-        private bool BetterMatch(List<MatchRecord> MatchRecords, MatchRecord newMatchRecord, bool removeOld = true)
+        /// <param name="languages"> Languages to filter rules for </param>
+        /// <returns> List of rules </returns>
+        private IEnumerable<ConvertedOatRule> GetRulesByLanguage(string input)
         {
-            bool betterMatch = false;
-            bool noMatch = true;
-
-            //if list is empty the new match is the best match
-            if (!MatchRecords.Any())
+            if (EnableCache)
             {
-                return true;
+                if (_languageRulesCache.ContainsKey(input))
+                    return _languageRulesCache[input];
             }
 
-            MatchRecord? matchRecordToRemove = null;
-            foreach (MatchRecord MatchRecord in MatchRecords)
+            IEnumerable<ConvertedOatRule> filteredRules = _ruleset.ByLanguage(input);
+
+            if (EnableCache)
             {
-                foreach (string matchRecordTag in MatchRecord.Rule.Tags ?? new string[] {""})
-                {
-                    foreach (string newMatchRecordTag in newMatchRecord.Rule.Tags ?? new string[] {""})
-                    {
-                        if (matchRecordTag == newMatchRecordTag)
-                        {
-                            if (newMatchRecord.Tags.Any(x => x.Contains("AzureKeyVault")))
-                            {
-
-                            }
-
-                            noMatch = false;
-                            if (newMatchRecord.Confidence > MatchRecord.Confidence)
-                            {
-                                if (removeOld)
-                                {
-                                    matchRecordToRemove = MatchRecord;
-                                }
-
-                                betterMatch = true;
-                                break;//as this method is used with uniquematche=true only one to worry about
-                            }
-                        }
-                    }
-
-                    if (betterMatch)
-                    {
-                        break;
-                    }
-                }
-
+                _languageRulesCache.TryAdd(input, filteredRules);
             }
 
-            if (removeOld && matchRecordToRemove != null)
-            {
-                MatchRecords.Remove(matchRecordToRemove);//safer to remove outside for enumeration
-            }
-
-            return betterMatch || noMatch;
+            return filteredRules;
         }
 
         /// <summary>
@@ -278,71 +388,44 @@ namespace Microsoft.ApplicationInspector.RulesEngine
         /// </summary>
         /// <param name="languages"> Languages to filter rules for </param>
         /// <returns> List of rules </returns>
-        private IEnumerable<ConvertedOatRule> GetRulesForSingleLanguage(string language)
+        private IEnumerable<ConvertedOatRule> GetUniversalRules()
         {
-            string langid = string.Empty;
-
-            if (EnableCache)
+            if (_universalRulesCache is null)
             {
-                // Make language id for cache purposes
-                langid = string.Join(":", language);
-                // Do we have the ruleset alrady in cache? If so return it
-                if (_rulesCache.ContainsKey(langid))
-                    return _rulesCache[langid];
+                if (EnableCache)
+                {
+                    _universalRulesCache = _ruleset.GetUniversalRules();
+                }
+                else
+                {
+                    return _ruleset.GetUniversalRules();
+                }
             }
 
-            IEnumerable<ConvertedOatRule> filteredRules = _ruleset.ByLanguage(language);
-
-            // Add the list to the cache so we save time on the next call
-            if (EnableCache && filteredRules.Any())
-            {
-                _rulesCache.TryAdd(langid, filteredRules);
-            }
-
-            return filteredRules;
+            return _universalRulesCache;
         }
 
         /// <summary>
-        /// Check if rule has at least one unique tag not seen before or if exception exists
-        /// Assumes that _uniqueTagsOnly == true has been checked first for relevance
+        ///     Filters the rules for those matching the content type. Resolves all the overrides
         /// </summary>
-        /// <param name="ruleTags"></param>
-        /// <returns></returns>
-        private bool RuleTagsAreUniqueOrAllowed(string[]? ruleTags)
+        /// <param name="languages"> Languages to filter rules for </param>
+        /// <returns> List of rules </returns>
+        private IEnumerable<ConvertedOatRule> GetRulesByFileName(string input)
         {
-            bool approved = false;
-            if (ruleTags == null)
+            if (EnableCache)
             {
-                _logger?.Debug("Rule with no tags in RuleTagsAreUniqueOrAllowed method");
-                throw new Exception("Rule with no tags in RuleTagsAreUniqueOrAllowed method");
+                if (_fileRulesCache.ContainsKey(input))
+                    return _fileRulesCache[input];
             }
 
-            foreach (string tag in ruleTags)
+            IEnumerable<ConvertedOatRule> filteredRules = _ruleset.ByFilename(input);
+
+            if (EnableCache)
             {
-                if (!_uniqueTagHashes.ContainsKey(tag))
-                {
-                    approved = true;
-                    break;
-                }
-                else if (UniqueTagExceptions != null)
-                {
-                    foreach (string tagException in UniqueTagExceptions)
-                    {
-                        if (tag.Contains(tagException))
-                        {
-                            approved = true;
-                            break;
-                        }
-                    }                   
-                }
-                
-                if (_logger != null && !approved)
-                {
-                    _logger.Debug(string.Format("Duplicate tag {0} not approved for match", tag));
-                }
+                _fileRulesCache.TryAdd(input, filteredRules);
             }
 
-            return approved;
+            return filteredRules;
         }
 
         /// <summary>
@@ -351,23 +434,13 @@ namespace Microsoft.ApplicationInspector.RulesEngine
         /// </summary>
         private string ExtractTextSample(string fileText, int index, int length)
         {
-            string result = "";
-            try
-            {
-                //some js file results may be too long for practical display
-                if (length > MAX_TEXT_SAMPLE_LENGTH)
-                {
-                    length = MAX_TEXT_SAMPLE_LENGTH;
-                }
+            if (index < 0 || length < 0) { return fileText; }
 
-                result = fileText.Substring(index, length).Trim();
-            }
-            catch (Exception e)
-            {
-                _logger?.Error(e.Message + " in ExtractTextSample");
-            }
+            length = Math.Min(Math.Min(length, MAX_TEXT_SAMPLE_LENGTH), fileText.Length - index);
 
-            return result;
+            if (length == 0) { return string.Empty; }
+
+            return fileText[index..(index + length)].Trim();
         }
 
         /// <summary>
@@ -376,70 +449,37 @@ namespace Microsoft.ApplicationInspector.RulesEngine
         /// from the template
         /// </summary>
         /// <returns></returns>
-        private string ExtractExcerpt(string text, int startLineNumber, int length = 10)
+        private static string ExtractExcerpt(TextContainer text, int startLineNumber, int context = 3)
         {
-            if (string.IsNullOrEmpty(text))
+            if (context == 0)
             {
-                return "";
+                return string.Empty;
             }
-
-            var lines = text.Split('\n');
-            var distance = (int)((length - 1.0) / 2.0);
-
-            // Sanity check
             if (startLineNumber < 0)
             {
                 startLineNumber = 0;
             }
 
-            if (startLineNumber >= lines.Length)
+            if (startLineNumber >= text.LineEnds.Count)
             {
-                startLineNumber = lines.Length - 1;
+                startLineNumber = text.LineEnds.Count - 1;
             }
 
-            var excerptStartLine = Math.Max(0, startLineNumber - distance);
-            var excerptEndLine = Math.Min(lines.Length - 1, startLineNumber + distance);
-
-            /* If the code snippet we're viewing is already indented 16 characters minimum,
-             * we don't want to show all that extra white-space, so we'll find the smallest
-             * number of spaces at the beginning of each line and use that.
-             */
-
-            var minSpaces = -1;
-            for (var i = excerptStartLine; i <= excerptEndLine; i++)
+            var excerptStartLine = Math.Max(0, startLineNumber - context);
+            var excerptEndLine = Math.Min(text.LineEnds.Count - 1, startLineNumber + context);
+            var startIndex = text.LineStarts[excerptStartLine];
+            var endIndex = text.LineEnds[excerptEndLine] + 1;
+            var maxCharacterContext = context * 100;
+            // Only gather 100*lines context characters to avoid gathering super long lines
+            if (text.LineStarts[startLineNumber] - startIndex > maxCharacterContext)
             {
-                var numPrefixSpaces = lines[i].TakeWhile(c => c == ' ').Count();
-                minSpaces = (minSpaces == -1 || numPrefixSpaces < minSpaces) ? numPrefixSpaces : minSpaces;
+                startIndex = Math.Max(0, startIndex - maxCharacterContext);
             }
-
-            var sb = new StringBuilder();
-            // We want to go from (start - 5) to (start + 5) (off by one?)
-            // LINE=10, len=5, we want 8..12, so N-(L-1)/2 to N+(L-1)/2
-            // But cap those values at 0/end
-            for (var i = excerptStartLine; i <= excerptEndLine; i++)
+            if (endIndex - text.LineEnds[startLineNumber] > maxCharacterContext)
             {
-                string line = lines[i].Substring(minSpaces).TrimEnd();
-                sb.AppendLine(line);
-
+                endIndex = Math.Min(text.FullContent.Length - 1, endIndex + maxCharacterContext);
             }
-
-            return sb.ToString();
-        }
-
-        /// <summary>
-        /// Supports unique tags option to not process if seen before
-        /// No harm in being called again for same value; will not be added...
-        /// </summary>
-        /// <param name="ruleTags"></param>
-        private void AddRuleTagHashes(string[] ruleTags)
-        {
-            foreach (string tag in ruleTags)
-            {
-                if (_uniqueTagHashes.TryAdd(tag,0) && _logger != null)
-                {
-                    _logger.Debug(string.Format("Unique tag {0} added", tag));
-                }
-            }
+            return text.FullContent[startIndex..endIndex];
         }
 
         #endregion Private Methods
